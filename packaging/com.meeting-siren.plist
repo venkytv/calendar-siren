@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.meeting-siren</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/meeting-siren</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/usr/local/var/lib/meeting-siren</string>
+
+	<key>StandardOutPath</key>
+	<string>/usr/local/var/log/meeting-siren.log</string>
+
+	<key>StandardErrorPath</key>
+	<string>/usr/local/var/log/meeting-siren.log</string>
+
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>STATE_DIR</key>
+		<string>/usr/local/var/lib/meeting-siren</string>
+		<key>NATS_URL</key>
+		<string>nats://localhost:4222</string>
+		<key>NATS_SUBJECT</key>
+		<string>alerts.meeting.alarm</string>
+	</dict>
+
+	<key>RunAtLoad</key>
+	<true/>
+
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+		<key>Crashed</key>
+		<true/>
+	</dict>
+
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+
+	<key>ProcessType</key>
+	<string>Background</string>
+
+	<key>LowPriorityIO</key>
+	<false/>
+
+	<key>Nice</key>
+	<integer>0</integer>
+
+	<key>SoftResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>1024</integer>
+	</dict>
+
+	<key>HardResourceLimits</key>
+	<dict>
+		<key>NumberOfFiles</key>
+		<integer>2048</integer>
+	</dict>
+</dict>
+</plist>

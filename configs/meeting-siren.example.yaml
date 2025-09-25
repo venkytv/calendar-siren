@@ -1,0 +1,71 @@
+# Meeting Siren Configuration Example
+# Copy this file to /etc/meeting-siren.yaml and customize as needed
+
+# NATS Connection Settings (required)
+nats_url: "nats://localhost:4222"
+# For authenticated NATS: "nats://username:password@host:4222"
+nats_subject: "alerts.meeting.alarm"
+
+# Audio Configuration
+volume_pct: 80                    # Volume percentage (0-100)
+sounds:                           # Audio files to play (in order)
+  - "/usr/local/share/meeting-siren/alarm1.wav"
+  - "/usr/local/share/meeting-siren/alarm2.wav"
+# Empty list means no audio files (TTS only)
+# sounds: []
+
+# Alarm Repeat Settings
+repeat_seconds: 30                # Seconds between repeats
+max_repeats: 3                    # Maximum number of repeats per event
+
+# Text-to-Speech Configuration
+tts_enabled: true                 # Enable TTS announcements
+tts_template: "Meeting alert: {{.Title}} in {{.Lead}} minutes"
+# Available template variables:
+# - {{.Title}}    - Meeting title
+# - {{.When}}     - Meeting start time
+# - {{.Lead}}     - Lead time in minutes
+# - {{.Severity}} - Alert severity (normal/critical)
+
+# Schedule Restrictions
+work_hours: "08:00-19:00"         # Only fire during these hours (24h format)
+quiet_days: "Sat,Sun"             # Days to skip alarms
+# Use full names: "Saturday,Sunday" or abbreviations: "Sat,Sun"
+# Empty string disables: work_hours: "" or quiet_days: ""
+
+# State Management
+state_dir: "/var/lib/meeting-siren"  # Directory for deduplication state
+
+# Optional Features
+# GPIO buzzer for Raspberry Pi (Linux only)
+# gpio_buzzer_pin: 18             # GPIO pin number
+
+# Snooze functionality
+# snooze_file: "/tmp/meeting-siren-snooze"  # Touch this file to snooze
+# snooze_minutes: 10              # Minutes to snooze
+
+# Example configurations for different scenarios:
+
+# Home office setup (macOS)
+# sounds:
+#   - "/Users/username/Documents/alarm.wav"
+# work_hours: "09:00-17:30"
+# quiet_days: "Sat,Sun"
+
+# Server room setup (Linux with GPIO buzzer)
+# sounds: []                      # No audio files, use TTS + buzzer
+# tts_enabled: true
+# gpio_buzzer_pin: 18
+# work_hours: ""                  # Always active
+# quiet_days: ""
+
+# Critical alerts only
+# work_hours: ""                  # Always active
+# quiet_days: ""                  # No quiet days
+# volume_pct: 100                 # Maximum volume
+# max_repeats: 5                  # More repeats
+
+# Development/testing
+# sounds: []                      # No sounds during dev
+# tts_enabled: false              # No TTS during dev
+# work_hours: "09:00-18:00"       # Only during work hours

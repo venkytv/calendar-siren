@@ -1,0 +1,50 @@
+[Unit]
+Description=Meeting Siren Daemon - Audio alerts for upcoming meetings
+Documentation=https://github.com/meeting-siren/meeting-siren
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=meeting-siren
+Group=meeting-siren
+WorkingDirectory=/var/lib/meeting-siren
+
+# Environment variables
+Environment=STATE_DIR=/var/lib/meeting-siren
+Environment=NATS_URL=nats://localhost:4222
+Environment=NATS_SUBJECT=alerts.meeting.alarm
+
+# Command to run
+ExecStart=/usr/local/bin/meeting-siren
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy
+Restart=always
+RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Security settings
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/meeting-siren
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+# Resource limits
+LimitNOFILE=1024
+MemoryMax=128M
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=meeting-siren
+
+[Install]
+WantedBy=multi-user.target
