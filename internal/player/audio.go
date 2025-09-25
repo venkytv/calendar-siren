@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"text/template"
 	"time"
@@ -37,12 +38,38 @@ func (p *Player) Play(ctx context.Context, soundFiles []string) error {
 		return nil
 	}
 
-	// Set volume before playing
-	if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
-		p.logger.Error("Failed to set volume", err, map[string]interface{}{
-			"volume_pct": p.config.VolumePct,
+	// Save current volume before changing it
+	originalVolume, err := p.getCurrentVolume(ctx)
+	if err != nil {
+		p.logger.Error("Failed to get current volume, proceeding without restoration", err, nil)
+		originalVolume = -1 // Mark as unavailable
+	} else {
+		p.logger.Debug("Saved original volume", map[string]interface{}{
+			"original_volume": originalVolume,
 		})
 	}
+
+	// Set volume for alarm
+	if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
+		p.logger.Error("Failed to set alarm volume", err, map[string]interface{}{
+			"alarm_volume": p.config.VolumePct,
+		})
+	}
+
+	// Ensure volume is restored even if playback fails
+	defer func() {
+		if originalVolume >= 0 {
+			if err := p.setVolumeInternal(ctx, originalVolume); err != nil {
+				p.logger.Error("Failed to restore original volume", err, map[string]interface{}{
+					"original_volume": originalVolume,
+				})
+			} else {
+				p.logger.Debug("Restored original volume", map[string]interface{}{
+					"restored_volume": originalVolume,
+				})
+			}
+		}
+	}()
 
 	// Play each sound file
 	for _, soundFile := range soundFiles {
@@ -73,9 +100,8 @@ func (p *Player) setVolumeInternal(ctx context.Context, percent int) error {
 
 	switch runtime.GOOS {
 	case "darwin":
-		// macOS: use osascript to set volume
-		volume := float64(percent) / 100.0 * 7.0 // macOS volume scale 0-7
-		cmd = exec.CommandContext(ctx, "osascript", "-e", fmt.Sprintf("set volume output volume %.0f", volume))
+		// macOS: use osascript to set volume (scale 0-100)
+		cmd = exec.CommandContext(ctx, "osascript", "-e", fmt.Sprintf("set volume output volume %d", percent))
 	case "linux":
 		// Linux: use amixer to set volume
 		cmd = exec.CommandContext(ctx, "amixer", "sset", "Master", fmt.Sprintf("%d%%", percent))
@@ -88,6 +114,33 @@ func (p *Player) setVolumeInternal(ctx context.Context, percent int) error {
 	}
 
 	return nil
+}
+
+func (p *Player) getCurrentVolume(ctx context.Context) (int, error) {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS: get current volume using osascript
+		cmd = exec.CommandContext(ctx, "osascript", "-e", "output volume of (get volume settings)")
+	case "linux":
+		// Linux: get current volume using amixer
+		cmd = exec.CommandContext(ctx, "sh", "-c", "amixer get Master | grep -oP '\\d+(?=%)' | head -1")
+	default:
+		return 0, fmt.Errorf("volume control not supported on %s", runtime.GOOS)
+	}
+
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, fmt.Errorf("getting current volume: %w", err)
+	}
+
+	volume, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	if err != nil {
+		return 0, fmt.Errorf("parsing volume output '%s': %w", strings.TrimSpace(string(output)), err)
+	}
+
+	return volume, nil
 }
 
 func (p *Player) playFile(ctx context.Context, soundFile string) error {
@@ -128,6 +181,39 @@ func (p *Player) PlayTTS(ctx context.Context, message string) error {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Save current volume before changing it
+	originalVolume, err := p.getCurrentVolume(ctx)
+	if err != nil {
+		p.logger.Error("Failed to get current volume for TTS, proceeding without restoration", err, nil)
+		originalVolume = -1 // Mark as unavailable
+	} else {
+		p.logger.Debug("Saved original volume for TTS", map[string]interface{}{
+			"original_volume": originalVolume,
+		})
+	}
+
+	// Set volume for TTS
+	if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
+		p.logger.Error("Failed to set TTS volume", err, map[string]interface{}{
+			"tts_volume": p.config.VolumePct,
+		})
+	}
+
+	// Ensure volume is restored even if TTS fails
+	defer func() {
+		if originalVolume >= 0 {
+			if err := p.setVolumeInternal(ctx, originalVolume); err != nil {
+				p.logger.Error("Failed to restore original volume after TTS", err, map[string]interface{}{
+					"original_volume": originalVolume,
+				})
+			} else {
+				p.logger.Debug("Restored original volume after TTS", map[string]interface{}{
+					"restored_volume": originalVolume,
+				})
+			}
+		}
+	}()
 
 	var cmd *exec.Cmd
 
