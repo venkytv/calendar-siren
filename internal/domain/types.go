@@ -31,8 +31,11 @@ type Config struct {
 	NATSSubject string `yaml:"nats_subject"`
 
 	// Audio configuration
-	VolumePct int      `yaml:"volume_pct"`
-	Sounds    []string `yaml:"sounds"`
+	VolumePct         int      `yaml:"volume_pct"`
+	Sounds            []string `yaml:"sounds"`
+	AudioOutputDriver string   `yaml:"audio_output_driver,omitempty"` // mpg123 output driver (e.g., "alsa", "pulse")
+	AudioDevice       string   `yaml:"audio_device,omitempty"`        // ALSA device for mpg123 (e.g., "hw:2,0", "plughw:2,0", "default")
+	AmixerCard        string   `yaml:"amixer_card,omitempty"`         // ALSA card for amixer (e.g., "0", "2", "default")
 
 	// Repeat configuration
 	RepeatSeconds int `yaml:"repeat_seconds"`
@@ -57,15 +60,18 @@ type Config struct {
 
 // Default configuration values
 var DefaultConfig = Config{
-	NATSUrl:       "nats://localhost:4222",
-	NATSSubject:   "alerts.meeting.alarm",
-	VolumePct:     80,
-	Sounds:        []string{},
-	RepeatSeconds: 30,
-	MaxRepeats:    3,
-	TTSEnabled:    false,
-	TTSTemplate:   "Meeting alert: {{.Title}} in {{.Lead}} minutes",
-	WorkHours:     "08:00-19:00",
-	QuietDays:     "Sat,Sun",
-	StateDir:      "/var/lib/meeting-siren",
+	NATSUrl:           "nats://localhost:4222",
+	NATSSubject:       "alerts.meeting.alarm",
+	VolumePct:         80,
+	Sounds:            []string{},
+	AudioOutputDriver: "alsa",     // Default to ALSA on Linux for systemd compatibility
+	AudioDevice:       "default",  // Default ALSA device
+	AmixerCard:        "0",        // Default to card 0
+	RepeatSeconds:     30,
+	MaxRepeats:        3,
+	TTSEnabled:        false,
+	TTSTemplate:       "Meeting alert: {{.Title}} in {{.Lead}} minutes",
+	WorkHours:         "08:00-19:00",
+	QuietDays:         "Sat,Sun",
+	StateDir:          "/var/lib/meeting-siren",
 }

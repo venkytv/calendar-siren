@@ -8,12 +8,24 @@ Wants=network-online.target
 Type=simple
 User=meeting-siren
 Group=meeting-siren
+SupplementaryGroups=audio
 WorkingDirectory=/var/lib/meeting-siren
 
 # Environment variables
 Environment=STATE_DIR=/var/lib/meeting-siren
 Environment=NATS_URL=nats://localhost:4222
 Environment=NATS_SUBJECT=alerts.meeting.alarm
+
+# Audio configuration - critical for systemd/headless operation
+# AUDIO_OUTPUT_DRIVER: mpg123 output driver (alsa, pulse, oss, etc.)
+# AUDIO_DEVICE: ALSA device for playback (hw:2,0, plughw:2,0, default, etc.)
+#   - Use 'aplay -l' to list available cards
+#   - For card 2, device 0: use plughw:2,0 (does automatic format conversion, more compatible)
+#   - Can use hw:2,0 for direct hardware access if plughw doesn't work
+# AMIXER_CARD: ALSA card number for volume control (0, 1, 2, etc.)
+Environment=AUDIO_OUTPUT_DRIVER=alsa
+Environment=AUDIO_DEVICE=plughw:2,0
+Environment=AMIXER_CARD=2
 
 # Command to run
 ExecStart=/usr/local/bin/meeting-siren
@@ -25,17 +37,18 @@ RestartSec=5
 StartLimitInterval=60s
 StartLimitBurst=3
 
-# Security settings
+# Security settings - relaxed for audio access
+# NOTE: Do NOT use PrivateDevices or DeviceAllow - they interfere with mpg123's
+# dynamic library loading (dlopen fails to load ALSA output plugin)
 NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/meeting-siren
-PrivateTmp=true
-ProtectKernelTunables=true
+ProtectSystem=false
+ProtectHome=false
+PrivateTmp=false
+ProtectKernelTunables=false
 ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictRealtime=true
-RestrictSUIDSGID=true
+ProtectControlGroups=false
+RestrictRealtime=false
+RestrictSUIDSGID=false
 
 # Resource limits
 LimitNOFILE=1024

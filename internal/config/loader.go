@@ -61,6 +61,15 @@ func (l *Loader) loadFromEnv(config *domain.Config) error {
 	if sounds := os.Getenv("SOUNDS"); sounds != "" {
 		config.Sounds = strings.Split(sounds, ",")
 	}
+	if audioDriver := os.Getenv("AUDIO_OUTPUT_DRIVER"); audioDriver != "" {
+		config.AudioOutputDriver = audioDriver
+	}
+	if audioDevice := os.Getenv("AUDIO_DEVICE"); audioDevice != "" {
+		config.AudioDevice = audioDevice
+	}
+	if amixerCard := os.Getenv("AMIXER_CARD"); amixerCard != "" {
+		config.AmixerCard = amixerCard
+	}
 	if repeat := os.Getenv("REPEAT_SECONDS"); repeat != "" {
 		if r, err := strconv.Atoi(repeat); err == nil && r >= 0 {
 			config.RepeatSeconds = r

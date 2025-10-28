@@ -98,11 +98,32 @@ func TestPlayer_Play(t *testing.T) {
 	}
 
 	config := &domain.Config{
-		VolumePct: 50,
-		Sounds:    []string{soundFile},
+		VolumePct:         50,
+		Sounds:            []string{soundFile},
+		AudioOutputDriver: "alsa",
+		AudioDevice:       "default",
+		AmixerCard:        "0",
 	}
 	logger := mocks.NewMockLogger()
 	player := NewPlayer(config, logger)
+
+	// Save original volume before any tests
+	ctx := context.Background()
+	originalVol, err := player.getCurrentVolume(ctx)
+	if err != nil {
+		t.Logf("Could not get original volume (test env limitation): %v", err)
+	}
+
+	// Ensure volume is restored after all subtests
+	t.Cleanup(func() {
+		if originalVol > 0 {
+			if err := player.SetVolume(ctx, originalVol); err != nil {
+				t.Logf("Warning: Could not restore original volume %d%%: %v", originalVol, err)
+			} else {
+				t.Logf("Restored original volume to %d%%", originalVol)
+			}
+		}
+	})
 
 	t.Run("play existing file", func(t *testing.T) {
 		ctx := context.Background()
@@ -149,9 +170,31 @@ func TestPlayer_SetVolume(t *testing.T) {
 		t.Skip("Volume control testing not supported on Windows")
 	}
 
-	config := &domain.Config{}
+	config := &domain.Config{
+		AudioOutputDriver: "alsa",
+		AudioDevice:       "default",
+		AmixerCard:        "0",
+	}
 	logger := mocks.NewMockLogger()
 	player := NewPlayer(config, logger)
+
+	// Save original volume before any tests
+	ctx := context.Background()
+	originalVol, err := player.getCurrentVolume(ctx)
+	if err != nil {
+		t.Logf("Could not get original volume (test env limitation): %v", err)
+	}
+
+	// Ensure volume is restored after all subtests
+	t.Cleanup(func() {
+		if originalVol > 0 {
+			if err := player.SetVolume(ctx, originalVol); err != nil {
+				t.Logf("Warning: Could not restore original volume %d%%: %v", originalVol, err)
+			} else {
+				t.Logf("Restored original volume to %d%%", originalVol)
+			}
+		}
+	})
 
 	t.Run("set valid volume", func(t *testing.T) {
 		ctx := context.Background()
@@ -200,13 +243,35 @@ func TestPlayer_PlayTTS(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &domain.Config{
-				TTSEnabled: tt.ttsEnabled,
+				TTSEnabled:        tt.ttsEnabled,
+				VolumePct:         50,
+				AudioOutputDriver: "alsa",
+				AudioDevice:       "default",
+				AmixerCard:        "0",
 			}
 			logger := mocks.NewMockLogger()
 			player := NewPlayer(config, logger)
 
 			ctx := context.Background()
-			err := player.PlayTTS(ctx, tt.message)
+
+			// Save original volume before test
+			originalVol, err := player.getCurrentVolume(ctx)
+			if err != nil {
+				t.Logf("Could not get original volume (test env limitation): %v", err)
+			}
+
+			// Ensure volume is restored after test
+			t.Cleanup(func() {
+				if originalVol > 0 {
+					if err := player.SetVolume(ctx, originalVol); err != nil {
+						t.Logf("Warning: Could not restore original volume %d%%: %v", originalVol, err)
+					} else {
+						t.Logf("Restored original volume to %d%%", originalVol)
+					}
+				}
+			})
+
+			err = player.PlayTTS(ctx, tt.message)
 
 			if !tt.ttsEnabled {
 				// Should return immediately without error when TTS is disabled
@@ -277,13 +342,33 @@ func TestPlayer_VolumeRestoration(t *testing.T) {
 			}
 
 			config := &domain.Config{
-				VolumePct: tt.alarmVolume,
-				Sounds:    []string{soundFile},
+				VolumePct:         tt.alarmVolume,
+				Sounds:            []string{soundFile},
+				AudioOutputDriver: "alsa",
+				AudioDevice:       "default",
+				AmixerCard:        "0",
 			}
 			logger := mocks.NewMockLogger()
 			player := NewPlayer(config, logger)
 
 			ctx := context.Background()
+
+			// Save original volume before test
+			originalVol, err := player.getCurrentVolume(ctx)
+			if err != nil {
+				t.Logf("Could not get original volume (test env limitation): %v", err)
+			}
+
+			// Ensure volume is restored after test, even if test fails
+			t.Cleanup(func() {
+				if originalVol > 0 {
+					if err := player.SetVolume(ctx, originalVol); err != nil {
+						t.Logf("Warning: Could not restore original volume %d%%: %v", originalVol, err)
+					} else {
+						t.Logf("Restored original volume to %d%%", originalVol)
+					}
+				}
+			})
 
 			// Note: In a real test environment, we can't actually control system volume
 			// This test verifies the logic flow and error handling
@@ -303,9 +388,12 @@ func TestPlayer_VolumeRestoration(t *testing.T) {
 			// that the code attempts the operations and handles errors gracefully
 
 			// Should have attempted to get current volume (may have failed in test env)
+			// or skipped volume control if no audio mixer is detected
 			hasVolumeLog := false
 			for _, log := range logs {
-				if log.Message == "Saved original volume" {
+				if log.Message == "Saved original volume" ||
+					log.Message == "No audio mixer detected, skipping volume control" ||
+					log.Message == "Cannot get current volume, skipping volume control" {
 					hasVolumeLog = true
 					break
 				}
@@ -318,7 +406,7 @@ func TestPlayer_VolumeRestoration(t *testing.T) {
 			}
 
 			if !hasVolumeLog {
-				t.Error("Expected volume save operation to be attempted")
+				t.Error("Expected volume save operation to be attempted or skipped gracefully")
 			}
 		})
 	}
@@ -349,14 +437,35 @@ func TestPlayer_TTSVolumeRestoration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			config := &domain.Config{
-				TTSEnabled: tt.ttsEnabled,
-				VolumePct:  85, // Set to specific volume for testing
+				TTSEnabled:        tt.ttsEnabled,
+				VolumePct:         85, // Set to specific volume for testing
+				AudioOutputDriver: "alsa",
+				AudioDevice:       "default",
+				AmixerCard:        "0",
 			}
 			logger := mocks.NewMockLogger()
 			player := NewPlayer(config, logger)
 
 			ctx := context.Background()
-			err := player.PlayTTS(ctx, tt.message)
+
+			// Save original volume before test
+			originalVol, err := player.getCurrentVolume(ctx)
+			if err != nil {
+				t.Logf("Could not get original volume (test env limitation): %v", err)
+			}
+
+			// Ensure volume is restored after test, even if test fails
+			t.Cleanup(func() {
+				if originalVol > 0 {
+					if err := player.SetVolume(ctx, originalVol); err != nil {
+						t.Logf("Warning: Could not restore original volume %d%%: %v", originalVol, err)
+					} else {
+						t.Logf("Restored original volume to %d%%", originalVol)
+					}
+				}
+			})
+
+			err = player.PlayTTS(ctx, tt.message)
 
 			if !tt.ttsEnabled {
 				// Should return immediately without error when TTS is disabled
@@ -380,10 +489,15 @@ func TestPlayer_TTSVolumeRestoration(t *testing.T) {
 			errorLogs := logger.GetErrorLogs()
 
 			hasVolumeLog := false
+			hasRestoreLog := false
 			for _, log := range logs {
-				if log.Message == "Saved original volume for TTS" {
+				if log.Message == "Saved original volume for TTS" ||
+					log.Message == "No audio mixer detected for TTS, skipping volume control" ||
+					log.Message == "Cannot get current volume for TTS, skipping volume control" {
 					hasVolumeLog = true
-					break
+				}
+				if log.Message == "Restored original volume after TTS" {
+					hasRestoreLog = true
 				}
 			}
 			for _, log := range errorLogs {
@@ -394,7 +508,23 @@ func TestPlayer_TTSVolumeRestoration(t *testing.T) {
 			}
 
 			if !hasVolumeLog {
-				t.Error("Expected TTS volume save operation to be attempted")
+				t.Error("Expected TTS volume save operation to be attempted or skipped gracefully")
+			}
+
+			// If volume was saved, it should also be restored
+			if hasVolumeLog && !hasRestoreLog {
+				// Check if volume control was skipped entirely
+				volumeSkipped := false
+				for _, log := range logs {
+					if log.Message == "No audio mixer detected for TTS, skipping volume control" ||
+						log.Message == "Cannot get current volume for TTS, skipping volume control" {
+						volumeSkipped = true
+						break
+					}
+				}
+				if !volumeSkipped {
+					t.Error("Volume was modified but not restored - this will leave system volume changed!")
+				}
 			}
 		})
 	}
@@ -405,7 +535,11 @@ func TestPlayer_GetCurrentVolume(t *testing.T) {
 		t.Skip("Volume control testing not supported on Windows")
 	}
 
-	config := &domain.Config{}
+	config := &domain.Config{
+		AudioOutputDriver: "alsa",
+		AudioDevice:       "default",
+		AmixerCard:        "0",
+	}
 	logger := mocks.NewMockLogger()
 	player := NewPlayer(config, logger)
 

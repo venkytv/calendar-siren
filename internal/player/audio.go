@@ -38,22 +38,34 @@ func (p *Player) Play(ctx context.Context, soundFiles []string) error {
 		return nil
 	}
 
-	// Save current volume before changing it
-	originalVolume, err := p.getCurrentVolume(ctx)
-	if err != nil {
-		p.logger.Error("Failed to get current volume, proceeding without restoration", err, nil)
-		originalVolume = -1 // Mark as unavailable
-	} else {
-		p.logger.Debug("Saved original volume", map[string]interface{}{
-			"original_volume": originalVolume,
-		})
-	}
+	// Skip volume control if disabled or on systems without audio mixer
+	var originalVolume int = -1
 
-	// Set volume for alarm
-	if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
-		p.logger.Error("Failed to set alarm volume", err, map[string]interface{}{
-			"alarm_volume": p.config.VolumePct,
-		})
+	// Only attempt volume control if we can detect audio system
+	if p.hasAudioMixer() {
+		// Save current volume before changing it
+		vol, err := p.getCurrentVolume(ctx)
+		if err != nil {
+			p.logger.Debug("Cannot get current volume, skipping volume control", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			originalVolume = vol
+			p.logger.Debug("Saved original volume", map[string]interface{}{
+				"original_volume": originalVolume,
+			})
+
+			// Set volume for alarm
+			if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
+				p.logger.Debug("Cannot set alarm volume, continuing without volume control", map[string]interface{}{
+					"alarm_volume": p.config.VolumePct,
+					"error": err.Error(),
+				})
+				originalVolume = -1 // Mark as unavailable since setting failed
+			}
+		}
+	} else {
+		p.logger.Debug("No audio mixer detected, skipping volume control", nil)
 	}
 
 	// Ensure volume is restored even if playback fails
@@ -103,17 +115,165 @@ func (p *Player) setVolumeInternal(ctx context.Context, percent int) error {
 		// macOS: use osascript to set volume (scale 0-100)
 		cmd = exec.CommandContext(ctx, "osascript", "-e", fmt.Sprintf("set volume output volume %d", percent))
 	case "linux":
-		// Linux: use amixer to set volume
-		cmd = exec.CommandContext(ctx, "amixer", "sset", "Master", fmt.Sprintf("%d%%", percent))
+		// Linux: use amixer to set volume, try different control names
+		// First try to find the actual control name
+		controlName, err := p.findVolumeControl(ctx)
+		if err != nil {
+			p.logger.Debug("Could not find volume control, trying Master", map[string]interface{}{
+				"error": err.Error(),
+			})
+			controlName = "Master"
+		}
+
+		// Build amixer command with explicit card if configured
+		args := []string{"sset", controlName, fmt.Sprintf("%d%%", percent)}
+		if p.config.AmixerCard != "" {
+			args = append([]string{"-c", p.config.AmixerCard}, args...)
+		}
+		cmd = exec.CommandContext(ctx, "amixer", args...)
 	default:
 		return fmt.Errorf("volume control not supported on %s", runtime.GOOS)
 	}
 
 	if err := cmd.Run(); err != nil {
+		// On Linux, if Master fails, try other common control names
+		if runtime.GOOS == "linux" {
+			alternativeControls := []string{"PCM", "Speaker", "Headphone", "Digital"}
+			for _, alt := range alternativeControls {
+				altArgs := []string{"sset", alt, fmt.Sprintf("%d%%", percent)}
+				if p.config.AmixerCard != "" {
+					altArgs = append([]string{"-c", p.config.AmixerCard}, altArgs...)
+				}
+				altCmd := exec.CommandContext(ctx, "amixer", altArgs...)
+				if altErr := altCmd.Run(); altErr == nil {
+					p.logger.Info("Successfully set volume using alternative control", map[string]interface{}{
+						"control": alt,
+						"volume":  percent,
+					})
+					return nil
+				}
+			}
+		}
 		return fmt.Errorf("setting volume to %d%%: %w", percent, err)
 	}
 
 	return nil
+}
+
+func (p *Player) findVolumeControl(ctx context.Context) (string, error) {
+	// First try to get list of available controls with amixer
+	args := []string{"scontrols"}
+	if p.config.AmixerCard != "" {
+		args = append([]string{"-c", p.config.AmixerCard}, args...)
+	}
+	cmd := exec.CommandContext(ctx, "amixer", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		// If amixer fails, try other approaches
+		return p.fallbackVolumeControl(ctx)
+	}
+
+	controls := strings.Split(string(output), "\n")
+	if len(controls) == 0 {
+		return p.fallbackVolumeControl(ctx)
+	}
+
+	// Priority order for control names
+	priorityControls := []string{"Master", "PCM", "Speaker", "Headphone", "Digital", "Capture"}
+
+	for _, priority := range priorityControls {
+		for _, line := range controls {
+			if strings.Contains(line, fmt.Sprintf("'%s'", priority)) {
+				return priority, nil
+			}
+		}
+	}
+
+	// If no priority control found, try to extract the first available control
+	for _, line := range controls {
+		if strings.Contains(line, "Simple mixer control") {
+			start := strings.Index(line, "'")
+			end := strings.LastIndex(line, "'")
+			if start != -1 && end != -1 && start != end {
+				control := line[start+1 : end]
+				return control, nil
+			}
+		}
+	}
+
+	return p.fallbackVolumeControl(ctx)
+}
+
+func (p *Player) fallbackVolumeControl(ctx context.Context) (string, error) {
+	// Try alternative volume control methods for Raspberry Pi
+
+	// Try checking /proc/asound/cards for available audio devices
+	if cards, err := p.getAudioCards(); err == nil && len(cards) > 0 {
+		p.logger.Debug("Found audio cards", map[string]interface{}{
+			"cards": cards,
+		})
+	}
+
+	// Try common Raspberry Pi volume controls
+	commonControls := []string{"PCM", "Master", "Headphone", "Speaker", "Digital"}
+
+	for _, control := range commonControls {
+		// Test if this control exists by trying to get its value
+		testArgs := []string{"get", control}
+		if p.config.AmixerCard != "" {
+			testArgs = append([]string{"-c", p.config.AmixerCard}, testArgs...)
+		}
+		testCmd := exec.CommandContext(ctx, "amixer", testArgs...)
+		if err := testCmd.Run(); err == nil {
+			return control, nil
+		}
+	}
+
+	return "", fmt.Errorf("no working audio controls found")
+}
+
+func (p *Player) getAudioCards() ([]string, error) {
+	data, err := os.ReadFile("/proc/asound/cards")
+	if err != nil {
+		return nil, err
+	}
+
+	var cards []string
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, ":") && len(line) > 10 {
+			parts := strings.Split(line, ":")
+			if len(parts) > 1 {
+				cards = append(cards, strings.TrimSpace(parts[1]))
+			}
+		}
+	}
+	return cards, nil
+}
+
+func (p *Player) hasAudioMixer() bool {
+	// Quick check if amixer is available and working
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "amixer", "--version")
+	if err := cmd.Run(); err != nil {
+		return false
+	}
+
+	// Try to list controls to see if any audio hardware is available
+	args := []string{"scontrols"}
+	if p.config.AmixerCard != "" {
+		args = append([]string{"-c", p.config.AmixerCard}, args...)
+	}
+	cmd = exec.CommandContext(ctx, "amixer", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// If we get some output, assume we have audio controls
+	return len(strings.TrimSpace(string(output))) > 0
 }
 
 func (p *Player) getCurrentVolume(ctx context.Context) (int, error) {
@@ -124,20 +284,54 @@ func (p *Player) getCurrentVolume(ctx context.Context) (int, error) {
 		// macOS: get current volume using osascript
 		cmd = exec.CommandContext(ctx, "osascript", "-e", "output volume of (get volume settings)")
 	case "linux":
-		// Linux: get current volume using amixer
-		cmd = exec.CommandContext(ctx, "sh", "-c", "amixer get Master | grep -oP '\\d+(?=%)' | head -1")
+		// Linux: find the actual control name and get volume
+		controlName, err := p.findVolumeControl(ctx)
+		if err != nil {
+			controlName = "Master" // fallback
+		}
+
+		// Build amixer command with optional card specification
+		amixerCmd := "amixer"
+		if p.config.AmixerCard != "" {
+			amixerCmd = fmt.Sprintf("amixer -c %s", p.config.AmixerCard)
+		}
+		cmd = exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("%s get %s | grep -o '[0-9]*%%' | head -1 | sed 's/%%//'", amixerCmd, controlName))
 	default:
 		return 0, fmt.Errorf("volume control not supported on %s", runtime.GOOS)
 	}
 
 	output, err := cmd.Output()
 	if err != nil {
-		return 0, fmt.Errorf("getting current volume: %w", err)
+		// On Linux, try alternative controls if the primary one fails
+		if runtime.GOOS == "linux" {
+			alternativeControls := []string{"PCM", "Speaker", "Headphone", "Digital"}
+			amixerCmd := "amixer"
+			if p.config.AmixerCard != "" {
+				amixerCmd = fmt.Sprintf("amixer -c %s", p.config.AmixerCard)
+			}
+			for _, alt := range alternativeControls {
+				altCmd := exec.CommandContext(ctx, "sh", "-c", fmt.Sprintf("%s get %s | grep -o '[0-9]*%%' | head -1 | sed 's/%%//'", amixerCmd, alt))
+				if altOutput, altErr := altCmd.Output(); altErr == nil {
+					output = altOutput
+					err = nil
+					break
+				}
+			}
+		}
+
+		if err != nil {
+			return 0, fmt.Errorf("getting current volume: %w", err)
+		}
 	}
 
-	volume, err := strconv.Atoi(strings.TrimSpace(string(output)))
+	volumeStr := strings.TrimSpace(string(output))
+	if volumeStr == "" {
+		return 0, fmt.Errorf("empty volume output - amixer may not be available or configured")
+	}
+
+	volume, err := strconv.Atoi(volumeStr)
 	if err != nil {
-		return 0, fmt.Errorf("parsing volume output '%s': %w", strings.TrimSpace(string(output)), err)
+		return 0, fmt.Errorf("parsing volume output '%s': %w", volumeStr, err)
 	}
 
 	return volume, nil
@@ -157,9 +351,30 @@ func (p *Player) playFile(ctx context.Context, soundFile string) error {
 	case "linux":
 		// Linux: try mpg123 first, then aplay
 		if _, err := exec.LookPath("mpg123"); err == nil {
-			cmd = exec.CommandContext(ctx, "mpg123", "-q", soundFile)
+			// Use a longer timeout context and ignore SIGINT/SIGTERM during playback
+			playCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+
+			// Build mpg123 command with explicit output driver and device if configured
+			args := []string{"-q"}
+			if p.config.AudioOutputDriver != "" {
+				args = append(args, "-o", p.config.AudioOutputDriver)
+			}
+			if p.config.AudioDevice != "" {
+				args = append(args, "-a", p.config.AudioDevice)
+			}
+			args = append(args, soundFile)
+			cmd = exec.CommandContext(playCtx, "mpg123", args...)
 		} else if _, err := exec.LookPath("aplay"); err == nil {
-			cmd = exec.CommandContext(ctx, "aplay", soundFile)
+			playCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			// aplay can use -D to specify device
+			args := []string{}
+			if p.config.AudioDevice != "" {
+				args = append(args, "-D", p.config.AudioDevice)
+			}
+			args = append(args, soundFile)
+			cmd = exec.CommandContext(playCtx, "aplay", args...)
 		} else {
 			return fmt.Errorf("no audio player found (mpg123 or aplay required)")
 		}
@@ -167,7 +382,24 @@ func (p *Player) playFile(ctx context.Context, soundFile string) error {
 		return fmt.Errorf("audio playback not supported on %s", runtime.GOOS)
 	}
 
+	// Redirect stdin to prevent blocking
+	cmd.Stdin = nil
+
+	// Capture stderr to log actual error messages
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
+	p.logger.Debug("Executing audio command", map[string]interface{}{
+		"command": cmd.Path,
+		"args":    cmd.Args,
+	})
+
 	if err := cmd.Run(); err != nil {
+		stderrOutput := strings.TrimSpace(stderrBuf.String())
+		if stderrOutput != "" {
+			p.logger.Error("Audio command stderr", fmt.Errorf("%s", stderrOutput), nil)
+			return fmt.Errorf("playing audio file %s: %w (stderr: %s)", soundFile, err, stderrOutput)
+		}
 		return fmt.Errorf("playing audio file %s: %w", soundFile, err)
 	}
 
@@ -182,22 +414,34 @@ func (p *Player) PlayTTS(ctx context.Context, message string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Save current volume before changing it
-	originalVolume, err := p.getCurrentVolume(ctx)
-	if err != nil {
-		p.logger.Error("Failed to get current volume for TTS, proceeding without restoration", err, nil)
-		originalVolume = -1 // Mark as unavailable
-	} else {
-		p.logger.Debug("Saved original volume for TTS", map[string]interface{}{
-			"original_volume": originalVolume,
-		})
-	}
+	// Skip volume control if disabled or on systems without audio mixer
+	var originalVolume int = -1
 
-	// Set volume for TTS
-	if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
-		p.logger.Error("Failed to set TTS volume", err, map[string]interface{}{
-			"tts_volume": p.config.VolumePct,
-		})
+	// Only attempt volume control if we can detect audio system
+	if p.hasAudioMixer() {
+		// Save current volume before changing it
+		vol, err := p.getCurrentVolume(ctx)
+		if err != nil {
+			p.logger.Debug("Cannot get current volume for TTS, skipping volume control", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else {
+			originalVolume = vol
+			p.logger.Debug("Saved original volume for TTS", map[string]interface{}{
+				"original_volume": originalVolume,
+			})
+
+			// Set volume for TTS
+			if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
+				p.logger.Debug("Cannot set TTS volume, continuing without volume control", map[string]interface{}{
+					"tts_volume": p.config.VolumePct,
+					"error": err.Error(),
+				})
+				originalVolume = -1 // Mark as unavailable since setting failed
+			}
+		}
+	} else {
+		p.logger.Debug("No audio mixer detected for TTS, skipping volume control", nil)
 	}
 
 	// Ensure volume is restored even if TTS fails
@@ -239,7 +483,19 @@ func (p *Player) PlayTTS(ctx context.Context, message string) error {
 		"message": message,
 	})
 
+	// Redirect stdin to prevent blocking
+	cmd.Stdin = nil
+
+	// Capture stderr to log actual error messages
+	var stderrBuf bytes.Buffer
+	cmd.Stderr = &stderrBuf
+
 	if err := cmd.Run(); err != nil {
+		stderrOutput := strings.TrimSpace(stderrBuf.String())
+		if stderrOutput != "" {
+			p.logger.Error("TTS command stderr", fmt.Errorf("%s", stderrOutput), nil)
+			return fmt.Errorf("playing TTS message: %w (stderr: %s)", err, stderrOutput)
+		}
 		return fmt.Errorf("playing TTS message: %w", err)
 	}
 
