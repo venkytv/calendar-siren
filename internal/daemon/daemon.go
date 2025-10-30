@@ -230,6 +230,16 @@ func (d *Daemon) handleRepeats(ctx context.Context, event *domain.AlarmEvent) {
 		case <-ctx.Done():
 			return
 		case <-time.After(repeatInterval):
+			// Stop repeating if the meeting has already started
+			if time.Now().After(event.Alert.When) {
+				d.logger.Info("Stopping alarm repeats: meeting has started", map[string]interface{}{
+					"uid":            event.UID,
+					"meeting_time":   event.Alert.When,
+					"completed_reps": i,
+				})
+				return
+			}
+
 			d.logger.Info("Playing alarm repeat", map[string]interface{}{
 				"uid":         event.UID,
 				"repeat_num":  i + 1,
