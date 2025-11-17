@@ -7,6 +7,7 @@ A production-ready Go daemon that plays loud audible alarms when it receives NAT
 - **Cross-platform audio support** - Works on macOS (`afplay`) and Linux (`mpg123`/`aplay`)
 - **NATS messaging** - Reliable message delivery with automatic reconnection
 - **Event deduplication** - Prevents duplicate alarms for the same meeting
+- **Final notification support** - Mark notifications as final to prevent further snoozes, with optional custom sounds
 - **Configurable scheduling** - Work hours and quiet days support
 - **Text-to-speech** - Optional TTS announcements with customizable templates
 - **Alarm repetition** - Configurable repeat intervals and limits
@@ -74,6 +75,9 @@ export VOLUME_PCT="80"
 ```bash
 # Publish a test alert
 nats pub alerts.meeting.alarm '{"title":"Test Meeting","when":"2025-09-25T15:00:00+01:00","lead":5}'
+
+# Test final notification (prevents further snooze notifications)
+nats pub alerts.meeting.alarm '{"title":"Test Meeting","when":"2025-09-25T15:00:00+01:00","lead":5,"is_final_notification":true}'
 ```
 
 ## Configuration
@@ -88,10 +92,12 @@ Configuration can be provided via environment variables or YAML file. YAML file 
 | `NATS_SUBJECT` | NATS subject to subscribe | `alerts.meeting.alarm` |
 | `VOLUME_PCT` | Audio volume (0-100) | `80` |
 | `SOUNDS` | Comma-separated audio files | `` |
+| `FINAL_NOTIFICATION_SOUNDS` | Comma-separated audio files for final notifications | `` |
 | `REPEAT_SECONDS` | Seconds between repeats | `30` |
 | `MAX_REPEATS` | Maximum repeats per event | `3` |
 | `TTS_ENABLED` | Enable text-to-speech | `false` |
 | `TTS_TEMPLATE` | TTS message template | `Meeting alert: {{.Title}} in {{.Lead}} minutes` |
+| `FINAL_NOTIFICATION_TTS_TEMPLATE` | TTS template for final notifications (not set=use default, ""=skip TTS) | `` |
 | `WORK_HOURS` | Active hours (HH:MM-HH:MM) | `08:00-19:00` |
 | `QUIET_DAYS` | Days to skip (comma-separated) | `Sat,Sun` |
 | `STATE_DIR` | State directory for deduplication | `/var/lib/meeting-siren` |
@@ -112,9 +118,17 @@ The daemon expects JSON messages with this structure:
   "title": "Team Sync",
   "when": "2025-09-25T14:00:00+01:00",
   "lead": 10,
-  "severity": "normal"
+  "severity": "normal",
+  "is_final_notification": false
 }
 ```
+
+**Fields:**
+- `title` (string, required): Meeting title
+- `when` (RFC3339 timestamp, required): Meeting start time
+- `lead` (int, required): Lead time in minutes
+- `severity` (string, optional): Alert severity (`normal` or `critical`)
+- `is_final_notification` (bool, optional): When `true`, prevents further snooze notifications and uses `final_notification_sounds`/`final_notification_tts_template` if configured (defaults to `false`)
 
 ## Architecture
 

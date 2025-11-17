@@ -503,11 +503,21 @@ func (p *Player) PlayTTS(ctx context.Context, message string) error {
 }
 
 func (p *Player) RenderTTSMessage(alert *domain.MeetingAlert) (string, error) {
-	if p.config.TTSTemplate == "" {
+	return p.renderTTSMessageWithTemplate(alert, p.config.TTSTemplate)
+}
+
+// RenderTTSMessageWithTemplate renders a TTS message using a specific template
+func (p *Player) RenderTTSMessageWithTemplate(alert *domain.MeetingAlert, templateStr string) (string, error) {
+	return p.renderTTSMessageWithTemplate(alert, templateStr)
+}
+
+// renderTTSMessageWithTemplate is the internal implementation for rendering TTS messages
+func (p *Player) renderTTSMessageWithTemplate(alert *domain.MeetingAlert, templateStr string) (string, error) {
+	if templateStr == "" {
 		return fmt.Sprintf("Meeting alert: %s in %d minutes", alert.Title, alert.Lead), nil
 	}
 
-	tmpl, err := template.New("tts").Parse(p.config.TTSTemplate)
+	tmpl, err := template.New("tts").Parse(templateStr)
 	if err != nil {
 		return "", fmt.Errorf("parsing TTS template: %w", err)
 	}

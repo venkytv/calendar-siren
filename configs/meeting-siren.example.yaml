@@ -14,6 +14,12 @@ sounds:                           # Audio files to play (in order)
 # Empty list means no audio files (TTS only)
 # sounds: []
 
+# Final Notification Sounds (optional)
+# When a message has "is_final_notification": true, use these sounds instead
+# If not configured or empty, falls back to regular sounds
+# final_notification_sounds:
+#   - "/usr/local/share/meeting-siren/final-alarm.wav"
+
 # Alarm Repeat Settings
 repeat_seconds: 30                # Seconds between repeats
 max_repeats: 3                    # Maximum number of repeats per event
@@ -26,6 +32,14 @@ tts_template: "Meeting alert: {{.Title}} in {{.Lead}} minutes"
 # - {{.When}}     - Meeting start time
 # - {{.Lead}}     - Lead time in minutes
 # - {{.Severity}} - Alert severity (normal/critical)
+
+# Final Notification TTS Template (optional)
+# When a message has "is_final_notification": true, use this TTS template
+# If not set: uses regular tts_template
+# If set to empty string "": disables TTS for final notifications
+# If set to a template: uses that template for final notifications
+# final_notification_tts_template: "FINAL WARNING: {{.Title}} starts in {{.Lead}} minutes!"
+# final_notification_tts_template: ""  # Disable TTS for final notifications
 
 # Schedule Restrictions
 work_hours: "08:00-19:00"         # Only fire during these hours (24h format)

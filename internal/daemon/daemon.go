@@ -177,32 +177,29 @@ func (d *Daemon) fireAlarm(event *domain.AlarmEvent) {
 	}
 
 	// Play alarm sounds
-	if len(d.config.Sounds) > 0 {
-		if err := d.player.Play(ctx, d.config.Sounds); err != nil {
+	sounds := d.selectSounds(event.Alert)
+	if len(sounds) > 0 {
+		if err := d.player.Play(ctx, sounds); err != nil {
 			d.logger.Error("Failed to play alarm sounds", err, map[string]interface{}{
 				"uid":    event.UID,
-				"sounds": d.config.Sounds,
+				"sounds": sounds,
 			})
 		}
 	}
 
 	// Play TTS if enabled
 	if d.config.TTSEnabled {
-		if ttsPlayer, ok := d.player.(interface {
-			RenderTTSMessage(*domain.MeetingAlert) (string, error)
-		}); ok {
-			message, err := ttsPlayer.RenderTTSMessage(event.Alert)
-			if err != nil {
-				d.logger.Error("Failed to render TTS message", err, map[string]interface{}{
-					"uid": event.UID,
+		message, err := d.renderTTSMessage(event.Alert)
+		if err != nil {
+			d.logger.Error("Failed to render TTS message", err, map[string]interface{}{
+				"uid": event.UID,
+			})
+		} else if message != "" { // Only play if message is not empty (empty means skip TTS)
+			if err := d.player.PlayTTS(ctx, message); err != nil {
+				d.logger.Error("Failed to play TTS", err, map[string]interface{}{
+					"uid":     event.UID,
+					"message": message,
 				})
-			} else {
-				if err := d.player.PlayTTS(ctx, message); err != nil {
-					d.logger.Error("Failed to play TTS", err, map[string]interface{}{
-						"uid":     event.UID,
-						"message": message,
-					})
-				}
 			}
 		}
 	}
@@ -247,8 +244,9 @@ func (d *Daemon) handleRepeats(ctx context.Context, event *domain.AlarmEvent) {
 			})
 
 			// Play sounds again
-			if len(d.config.Sounds) > 0 {
-				if err := d.player.Play(ctx, d.config.Sounds); err != nil {
+			sounds := d.selectSounds(event.Alert)
+			if len(sounds) > 0 {
+				if err := d.player.Play(ctx, sounds); err != nil {
 					d.logger.Error("Failed to play repeat alarm", err, map[string]interface{}{
 						"uid":        event.UID,
 						"repeat_num": i + 1,
@@ -258,17 +256,66 @@ func (d *Daemon) handleRepeats(ctx context.Context, event *domain.AlarmEvent) {
 
 			// Play TTS again if enabled
 			if d.config.TTSEnabled {
-				if ttsPlayer, ok := d.player.(interface {
-					RenderTTSMessage(*domain.MeetingAlert) (string, error)
-				}); ok {
-					message, err := ttsPlayer.RenderTTSMessage(event.Alert)
-					if err == nil {
-						d.player.PlayTTS(ctx, message)
-					}
+				message, err := d.renderTTSMessage(event.Alert)
+				if err == nil && message != "" { // Only play if message is not empty
+					d.player.PlayTTS(ctx, message)
 				}
 			}
 		}
 	}
+}
+
+// selectSounds returns the appropriate sound files based on whether this is a final notification
+func (d *Daemon) selectSounds(alert *domain.MeetingAlert) []string {
+	// If this is a final notification and final notification sounds are configured, use those
+	if alert.IsFinalNotification && len(d.config.FinalNotificationSounds) > 0 {
+		return d.config.FinalNotificationSounds
+	}
+	// Otherwise, use the regular sounds
+	return d.config.Sounds
+}
+
+// selectTTSTemplate returns the appropriate TTS template based on whether this is a final notification
+// Returns the template string and a boolean indicating whether TTS should be skipped
+func (d *Daemon) selectTTSTemplate(alert *domain.MeetingAlert) (string, bool) {
+	// If this is a final notification and final notification TTS template is configured
+	if alert.IsFinalNotification && d.config.FinalNotificationTTSTemplate != nil {
+		template := *d.config.FinalNotificationTTSTemplate
+		// If explicitly set to empty string, skip TTS
+		if template == "" {
+			return "", true // skip TTS
+		}
+		// Use the configured final notification template
+		return template, false
+	}
+	// Otherwise, use the regular template
+	return d.config.TTSTemplate, false
+}
+
+// renderTTSMessage renders a TTS message using the appropriate template
+func (d *Daemon) renderTTSMessage(alert *domain.MeetingAlert) (string, error) {
+	template, skipTTS := d.selectTTSTemplate(alert)
+
+	// If TTS should be skipped for this notification, return empty string
+	if skipTTS {
+		return "", nil
+	}
+
+	// Use the RenderTTSMessageWithTemplate method if available
+	if ttsPlayer, ok := d.player.(interface {
+		RenderTTSMessageWithTemplate(*domain.MeetingAlert, string) (string, error)
+	}); ok {
+		return ttsPlayer.RenderTTSMessageWithTemplate(alert, template)
+	}
+
+	// Fallback to RenderTTSMessage if RenderTTSMessageWithTemplate is not available
+	if ttsPlayer, ok := d.player.(interface {
+		RenderTTSMessage(*domain.MeetingAlert) (string, error)
+	}); ok {
+		return ttsPlayer.RenderTTSMessage(alert)
+	}
+
+	return "", fmt.Errorf("player does not support TTS rendering")
 }
 
 func (d *Daemon) cleanupRoutine(ctx context.Context) {

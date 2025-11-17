@@ -21,11 +21,12 @@ type Manager struct {
 }
 
 type eventRecord struct {
-	UID       string    `json:"uid"`
-	Title     string    `json:"title"`
-	When      time.Time `json:"when"`
-	LastFired time.Time `json:"last_fired"`
-	FireCount int       `json:"fire_count"`
+	UID                 string    `json:"uid"`
+	Title               string    `json:"title"`
+	When                time.Time `json:"when"`
+	LastFired           time.Time `json:"last_fired"`
+	FireCount           int       `json:"fire_count"`
+	IsFinalNotification bool      `json:"is_final_notification"`
 }
 
 func NewManager(stateDir string, logger domain.Logger) (*Manager, error) {
@@ -74,6 +75,15 @@ func (m *Manager) ShouldFire(event *domain.AlarmEvent) (bool, error) {
 		return true, nil
 	}
 
+	// Check if previous fire was a final notification
+	if record.IsFinalNotification {
+		m.logger.Debug("Previous fire was final notification, no more snoozes allowed", map[string]interface{}{
+			"uid":        uid,
+			"last_fired": record.LastFired,
+		})
+		return false, nil
+	}
+
 	// Check if enough time has passed since last fire
 	now := time.Now()
 	timeSinceLast := now.Sub(record.LastFired)
@@ -111,6 +121,7 @@ func (m *Manager) RecordFired(event *domain.AlarmEvent) error {
 	record.When = event.Alert.When
 	record.LastFired = time.Now()
 	record.FireCount++
+	record.IsFinalNotification = event.Alert.IsFinalNotification
 
 	if err := m.saveEventRecord(stateFile, record); err != nil {
 		return fmt.Errorf("saving event record: %w", err)

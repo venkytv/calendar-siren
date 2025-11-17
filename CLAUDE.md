@@ -46,9 +46,15 @@ The daemon expects JSON messages with the following structure:
   "title": "Team Sync",
   "when": "2025-09-25T14:00:00+01:00",
   "lead": 10,
-  "severity": "normal|critical"
+  "severity": "normal|critical",
+  "is_final_notification": false
 }
 ```
+
+**Note**: The `is_final_notification` field is optional and defaults to `false` if not present. When set to `true`:
+- No further snooze notifications will be triggered for this event
+- If `final_notification_sounds` is configured, those sounds will be used instead of the regular sounds
+- If `final_notification_tts_template` is configured, that template will be used for TTS (can be set to empty string `""` to disable TTS for final notifications)
 
 ## Development Commands
 
@@ -136,10 +142,12 @@ nats pub alerts.meeting.alarm '{"title":"Design Review","when":"2025-09-25T15:00
 ### Configuration Keys
 - `volume_pct`: Audio volume percentage
 - `sounds[]`: Array of audio file paths to play
+- `final_notification_sounds[]`: Array of audio file paths to play for final notifications (optional, falls back to `sounds[]` if not configured)
 - `repeat_seconds`: Interval between alarm repeats
 - `max_repeats`: Maximum number of repeats per event
 - `tts_enabled`: Enable text-to-speech announcements
 - `tts_template`: Template for TTS messages
+- `final_notification_tts_template`: TTS template for final notifications (optional: not set=use default template, ""=skip TTS, "template"=use template)
 - `work_hours`: Time range (e.g., "08:00-19:00")
 - `quiet_days`: Days to skip (e.g., "Sat,Sun")
 
