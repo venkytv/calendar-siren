@@ -50,6 +50,13 @@ quiet_days: "Sat,Sun"             # Days to skip alarms
 # State Management
 state_dir: "/var/lib/meeting-siren"  # Directory for deduplication state
 
+# Heartbeat Configuration
+heartbeat_enabled: false              # Enable heartbeat publishing to NATS
+heartbeat_subject: "heartbeat.meeting-siren"  # Subject for heartbeat messages
+heartbeat_interval: 60                # Heartbeat interval in seconds (1 minute)
+heartbeat_description: "Meeting Siren"  # Service description for monitoring
+heartbeat_grace_period: 180           # Grace period in seconds (3 minutes)
+
 # Optional Features
 # GPIO buzzer for Raspberry Pi (Linux only)
 # gpio_buzzer_pin: 18             # GPIO pin number

@@ -128,3 +128,8 @@ func (s *Subscriber) Health() map[string]interface{} {
 		"last_error": s.conn.LastError(),
 	}
 }
+
+// GetConnection returns the underlying NATS connection
+func (s *Subscriber) GetConnection() *nats.Conn {
+	return s.conn
+}

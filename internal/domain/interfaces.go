@@ -47,3 +47,9 @@ type Daemon interface {
 	Start(ctx context.Context) error
 	Stop() error
 }
+
+// HeartbeatPublisher publishes periodic heartbeat messages to NATS
+type HeartbeatPublisher interface {
+	Start(ctx context.Context) error
+	Stop() error
+}

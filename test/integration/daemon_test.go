@@ -18,6 +18,16 @@ import (
 	natsio "github.com/nats-io/nats.go"
 )
 
+type mockHeartbeatPublisher struct{}
+
+func (m *mockHeartbeatPublisher) Start(ctx context.Context) error {
+	return nil
+}
+
+func (m *mockHeartbeatPublisher) Stop() error {
+	return nil
+}
+
 func TestDaemon_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -84,8 +94,10 @@ quiet_days: ""
 
 	scheduler := state.NewScheduler(cfg, log)
 
+	heartbeat := &mockHeartbeatPublisher{}
+
 	// Create daemon with mock audio player
-	d := daemon.NewDaemon(cfg, log, subscriber, mockAudioPlayer, stateManager, scheduler)
+	d := daemon.NewDaemon(cfg, log, subscriber, mockAudioPlayer, stateManager, scheduler, heartbeat)
 
 	// Start daemon in background
 	ctx, cancel := context.WithCancel(context.Background())

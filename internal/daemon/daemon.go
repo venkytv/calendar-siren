@@ -10,12 +10,13 @@ import (
 )
 
 type Daemon struct {
-	config       *domain.Config
-	logger       domain.Logger
-	subscriber   domain.MessageSubscriber
-	player       domain.AudioPlayer
-	stateManager domain.StateManager
-	scheduler    domain.Scheduler
+	config             *domain.Config
+	logger             domain.Logger
+	subscriber         domain.MessageSubscriber
+	player             domain.AudioPlayer
+	stateManager       domain.StateManager
+	scheduler          domain.Scheduler
+	heartbeatPublisher domain.HeartbeatPublisher
 
 	// Internal state
 	mu       sync.RWMutex
@@ -31,15 +32,17 @@ func NewDaemon(
 	player domain.AudioPlayer,
 	stateManager domain.StateManager,
 	scheduler domain.Scheduler,
+	heartbeatPublisher domain.HeartbeatPublisher,
 ) *Daemon {
 	return &Daemon{
-		config:       config,
-		logger:       logger,
-		subscriber:   subscriber,
-		player:       player,
-		stateManager: stateManager,
-		scheduler:    scheduler,
-		stopChan:     make(chan struct{}),
+		config:             config,
+		logger:             logger,
+		subscriber:         subscriber,
+		player:             player,
+		stateManager:       stateManager,
+		scheduler:          scheduler,
+		heartbeatPublisher: heartbeatPublisher,
+		stopChan:           make(chan struct{}),
 	}
 }
 
@@ -53,10 +56,18 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.mu.Unlock()
 
 	d.logger.Info("Starting meeting-siren daemon", map[string]interface{}{
-		"nats_url":     d.config.NATSUrl,
-		"nats_subject": d.config.NATSSubject,
-		"state_dir":    d.config.StateDir,
+		"nats_url":          d.config.NATSUrl,
+		"nats_subject":      d.config.NATSSubject,
+		"state_dir":         d.config.StateDir,
+		"heartbeat_enabled": d.config.HeartbeatEnabled,
 	})
+
+	// Start heartbeat publisher if configured
+	if d.heartbeatPublisher != nil {
+		if err := d.heartbeatPublisher.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start heartbeat publisher: %w", err)
+		}
+	}
 
 	// Start cleanup routine
 	d.wg.Add(1)
@@ -96,6 +107,13 @@ func (d *Daemon) Stop() error {
 
 func (d *Daemon) shutdown() error {
 	d.logger.Info("Shutting down daemon", nil)
+
+	// Stop heartbeat publisher
+	if d.heartbeatPublisher != nil {
+		if err := d.heartbeatPublisher.Stop(); err != nil {
+			d.logger.Error("Error stopping heartbeat publisher", err, nil)
+		}
+	}
 
 	// Close NATS subscriber
 	if err := d.subscriber.Close(); err != nil {

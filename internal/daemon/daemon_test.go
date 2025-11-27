@@ -105,6 +105,16 @@ func (m *MockScheduler) SetShouldFire(should bool) {
 	m.shouldFire = should
 }
 
+type MockHeartbeatPublisher struct{}
+
+func (m *MockHeartbeatPublisher) Start(ctx context.Context) error {
+	return nil
+}
+
+func (m *MockHeartbeatPublisher) Stop() error {
+	return nil
+}
+
 func TestDaemon_HandleMeetingAlert(t *testing.T) {
 	config := &domain.Config{
 		NATSUrl:       "nats://test:4222",
@@ -119,8 +129,9 @@ func TestDaemon_HandleMeetingAlert(t *testing.T) {
 	audioPlayer := mocks.NewMockAudioPlayer()
 	stateManager := &MockStateManager{shouldFire: true}
 	scheduler := &MockScheduler{shouldFire: true}
+	heartbeat := &MockHeartbeatPublisher{}
 
-	daemon := NewDaemon(config, logger, subscriber, audioPlayer, stateManager, scheduler)
+	daemon := NewDaemon(config, logger, subscriber, audioPlayer, stateManager, scheduler, heartbeat)
 
 	alert := &domain.MeetingAlert{
 		Title:    "Test Meeting",
@@ -210,8 +221,9 @@ func TestDaemon_StartStop(t *testing.T) {
 	audioPlayer := mocks.NewMockAudioPlayer()
 	stateManager := &MockStateManager{}
 	scheduler := &MockScheduler{}
+	heartbeat := &MockHeartbeatPublisher{}
 
-	daemon := NewDaemon(config, logger, subscriber, audioPlayer, stateManager, scheduler)
+	daemon := NewDaemon(config, logger, subscriber, audioPlayer, stateManager, scheduler, heartbeat)
 
 	t.Run("start and stop daemon", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -246,7 +258,7 @@ func TestDaemon_StartStop(t *testing.T) {
 
 	t.Run("cannot start already running daemon", func(t *testing.T) {
 		// Create a new daemon for this test
-		newDaemon := NewDaemon(config, logger, &MockSubscriber{}, audioPlayer, stateManager, scheduler)
+		newDaemon := NewDaemon(config, logger, &MockSubscriber{}, audioPlayer, stateManager, scheduler, &MockHeartbeatPublisher{})
 
 		ctx1, cancel1 := context.WithCancel(context.Background())
 

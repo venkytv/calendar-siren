@@ -11,6 +11,7 @@ import (
 
 	"github.com/meeting-siren/meeting-siren/internal/config"
 	"github.com/meeting-siren/meeting-siren/internal/daemon"
+	"github.com/meeting-siren/meeting-siren/internal/heartbeat"
 	"github.com/meeting-siren/meeting-siren/internal/nats"
 	"github.com/meeting-siren/meeting-siren/internal/player"
 	"github.com/meeting-siren/meeting-siren/internal/state"
@@ -86,8 +87,10 @@ func main() {
 
 	scheduler := state.NewScheduler(cfg, log)
 
+	heartbeatPublisher := heartbeat.NewPublisher(subscriber.GetConnection(), cfg, log)
+
 	// Create daemon
-	d := daemon.NewDaemon(cfg, log, subscriber, audioPlayer, stateManager, scheduler)
+	d := daemon.NewDaemon(cfg, log, subscriber, audioPlayer, stateManager, scheduler, heartbeatPublisher)
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())

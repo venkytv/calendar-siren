@@ -114,6 +114,25 @@ func (l *Loader) loadFromEnv(config *domain.Config) error {
 			config.SnoozeMinutes = s
 		}
 	}
+	if hbEnabled := os.Getenv("HEARTBEAT_ENABLED"); hbEnabled != "" {
+		config.HeartbeatEnabled = strings.ToLower(hbEnabled) == "true"
+	}
+	if hbSubject := os.Getenv("HEARTBEAT_SUBJECT"); hbSubject != "" {
+		config.HeartbeatSubject = hbSubject
+	}
+	if hbInterval := os.Getenv("HEARTBEAT_INTERVAL"); hbInterval != "" {
+		if i, err := strconv.Atoi(hbInterval); err == nil && i > 0 {
+			config.HeartbeatInterval = i
+		}
+	}
+	if hbDesc := os.Getenv("HEARTBEAT_DESCRIPTION"); hbDesc != "" {
+		config.HeartbeatDescription = hbDesc
+	}
+	if hbGrace := os.Getenv("HEARTBEAT_GRACE_PERIOD"); hbGrace != "" {
+		if g, err := strconv.Atoi(hbGrace); err == nil && g >= 0 {
+			config.HeartbeatGracePeriod = g
+		}
+	}
 	return nil
 }
 
