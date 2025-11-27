@@ -27,13 +27,13 @@ func NewSubscriber(natsURL string, logger domain.Logger) (*Subscriber, error) {
 			})
 		}),
 		nats.DisconnectHandler(func(nc *nats.Conn) {
-			logger.Info("NATS disconnected", map[string]interface{}{
-				"last_error": nc.LastError(),
+			logger.Error("NATS disconnected - attempting reconnection", nc.LastError(), map[string]interface{}{
+				"server": nc.ConnectedUrl(),
 			})
 		}),
 		nats.ClosedHandler(func(nc *nats.Conn) {
-			logger.Info("NATS connection closed", map[string]interface{}{
-				"last_error": nc.LastError(),
+			logger.Error("NATS connection permanently closed", nc.LastError(), map[string]interface{}{
+				"server": nc.ConnectedUrl(),
 			})
 		}),
 		nats.ErrorHandler(func(nc *nats.Conn, sub *nats.Subscription, err error) {
@@ -132,4 +132,9 @@ func (s *Subscriber) Health() map[string]interface{} {
 // GetConnection returns the underlying NATS connection
 func (s *Subscriber) GetConnection() *nats.Conn {
 	return s.conn
+}
+
+// IsConnected returns true if the NATS connection is active
+func (s *Subscriber) IsConnected() bool {
+	return s.conn != nil && s.conn.IsConnected()
 }

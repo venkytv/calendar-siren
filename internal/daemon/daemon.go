@@ -73,6 +73,10 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.wg.Add(1)
 	go d.cleanupRoutine(ctx)
 
+	// Start NATS health monitoring
+	d.wg.Add(1)
+	go d.natsHealthMonitor(ctx)
+
 	// Start message subscription
 	d.wg.Add(1)
 	go func() {
@@ -350,6 +354,68 @@ func (d *Daemon) cleanupRoutine(ctx context.Context) {
 			// Clean up state files older than 24 hours
 			if err := d.stateManager.Cleanup(24 * time.Hour); err != nil {
 				d.logger.Error("Failed to cleanup old state files", err, nil)
+			}
+		}
+	}
+}
+
+func (d *Daemon) natsHealthMonitor(ctx context.Context) {
+	defer d.wg.Done()
+
+	const (
+		checkInterval       = 10 * time.Second
+		maxDisconnectPeriod = 30 * time.Second
+	)
+
+	ticker := time.NewTicker(checkInterval)
+	defer ticker.Stop()
+
+	var disconnectedSince *time.Time
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			// Check if NATS is connected
+			isConnected := false
+			if healthChecker, ok := d.subscriber.(interface{ IsConnected() bool }); ok {
+				isConnected = healthChecker.IsConnected()
+			}
+
+			if isConnected {
+				// Reset disconnection tracking if we're connected
+				if disconnectedSince != nil {
+					d.logger.Info("NATS connection restored", map[string]interface{}{
+						"was_disconnected_for": time.Since(*disconnectedSince).String(),
+					})
+					disconnectedSince = nil
+				}
+			} else {
+				// Track disconnection time
+				if disconnectedSince == nil {
+					now := time.Now()
+					disconnectedSince = &now
+					d.logger.Error("NATS health check failed - connection lost", nil, map[string]interface{}{
+						"max_disconnect_period": maxDisconnectPeriod.String(),
+					})
+				} else {
+					// Check if we've been disconnected for too long
+					disconnectedDuration := time.Since(*disconnectedSince)
+					if disconnectedDuration >= maxDisconnectPeriod {
+						d.logger.Error("CRITICAL: NATS disconnected for too long - shutting down", nil, map[string]interface{}{
+							"disconnected_duration": disconnectedDuration.String(),
+							"max_allowed":           maxDisconnectPeriod.String(),
+						})
+						// Trigger shutdown
+						close(d.stopChan)
+						return
+					}
+					d.logger.Error("NATS still disconnected", nil, map[string]interface{}{
+						"disconnected_for": disconnectedDuration.String(),
+						"max_allowed":      maxDisconnectPeriod.String(),
+					})
+				}
 			}
 		}
 	}
