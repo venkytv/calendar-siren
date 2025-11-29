@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/nats-io/nats.go v1.33.1
-	github.com/venkytv/nats-heartbeat v0.2.0
+	github.com/venkytv/nats-heartbeat v0.3.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
