@@ -86,6 +86,9 @@ func (l *Loader) loadFromEnv(config *domain.Config) error {
 	if tts := os.Getenv("TTS_ENABLED"); tts != "" {
 		config.TTSEnabled = strings.ToLower(tts) == "true"
 	}
+	if ttsCmd := os.Getenv("TTS_COMMAND"); ttsCmd != "" {
+		config.TTSCommand = ttsCmd
+	}
 	if template := os.Getenv("TTS_TEMPLATE"); template != "" {
 		config.TTSTemplate = template
 	}

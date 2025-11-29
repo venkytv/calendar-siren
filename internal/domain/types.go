@@ -45,6 +45,7 @@ type Config struct {
 
 	// TTS configuration
 	TTSEnabled                   bool    `yaml:"tts_enabled"`
+	TTSCommand                   string  `yaml:"tts_command,omitempty"`                     // Custom TTS command (accepts input on stdin). Falls back to say/espeak-ng/espeak if not provided
 	TTSTemplate                  string  `yaml:"tts_template"`
 	FinalNotificationTTSTemplate *string `yaml:"final_notification_tts_template,omitempty"` // TTS template for final notifications (nil=use default, ""=skip TTS, "template"=use template)
 

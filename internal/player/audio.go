@@ -461,22 +461,38 @@ func (p *Player) PlayTTS(ctx context.Context, message string) error {
 
 	var cmd *exec.Cmd
 
-	switch runtime.GOOS {
-	case "darwin":
-		// macOS: use say command
-		cmd = exec.CommandContext(ctx, "say", message)
-	case "linux":
-		// Linux: use espeak-ng if available
-		if _, err := exec.LookPath("espeak-ng"); err == nil {
-			cmd = exec.CommandContext(ctx, "espeak-ng", message)
-		} else if _, err := exec.LookPath("espeak"); err == nil {
-			cmd = exec.CommandContext(ctx, "espeak", message)
-		} else {
-			p.logger.Error("TTS not available", fmt.Errorf("espeak-ng or espeak not found"), nil)
+	// Use custom TTS command if configured
+	if p.config.TTSCommand != "" {
+		// Parse the command to handle cases with arguments
+		parts := strings.Fields(p.config.TTSCommand)
+		if len(parts) == 0 {
+			p.logger.Error("Invalid TTS command", fmt.Errorf("empty command string"), nil)
 			return nil
 		}
-	default:
-		return fmt.Errorf("TTS not supported on %s", runtime.GOOS)
+
+		cmdName := parts[0]
+		cmdArgs := append(parts[1:], message)
+
+		cmd = exec.CommandContext(ctx, cmdName, cmdArgs...)
+	} else {
+		// Fall back to default platform-specific TTS
+		switch runtime.GOOS {
+		case "darwin":
+			// macOS: use say command
+			cmd = exec.CommandContext(ctx, "say", message)
+		case "linux":
+			// Linux: use espeak-ng if available
+			if _, err := exec.LookPath("espeak-ng"); err == nil {
+				cmd = exec.CommandContext(ctx, "espeak-ng", message)
+			} else if _, err := exec.LookPath("espeak"); err == nil {
+				cmd = exec.CommandContext(ctx, "espeak", message)
+			} else {
+				p.logger.Error("TTS not available", fmt.Errorf("espeak-ng or espeak not found"), nil)
+				return nil
+			}
+		default:
+			return fmt.Errorf("TTS not supported on %s", runtime.GOOS)
+		}
 	}
 
 	p.logger.Info("Playing TTS message", map[string]interface{}{

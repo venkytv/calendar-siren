@@ -26,6 +26,10 @@ max_repeats: 3                    # Maximum number of repeats per event
 
 # Text-to-Speech Configuration
 tts_enabled: true                 # Enable TTS announcements
+# tts_command: "/usr/local/bin/my-tts-wrapper"  # Custom TTS command (optional)
+# If not specified, falls back to platform defaults: say (macOS) or espeak-ng/espeak (Linux)
+# The rendered message will be passed as the last argument to the command
+# For complex pipelines (e.g., piper | aplay), create a shell wrapper script
 tts_template: "Meeting alert: {{.Title}} in {{.Lead}} minutes"
 # Available template variables:
 # - {{.Title}}    - Meeting title
