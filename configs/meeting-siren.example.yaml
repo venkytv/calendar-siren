@@ -14,12 +14,6 @@ sounds:                           # Audio files to play (in order)
 # Empty list means no audio files (TTS only)
 # sounds: []
 
-# Final Notification Sounds (optional)
-# When a message has "is_final_notification": true, use these sounds instead
-# If not configured or empty, falls back to regular sounds
-# final_notification_sounds:
-#   - "/usr/local/share/meeting-siren/final-alarm.wav"
-
 # Alarm Repeat Settings
 repeat_seconds: 30                # Seconds between repeats
 max_repeats: 3                    # Maximum number of repeats per event
@@ -37,13 +31,23 @@ tts_template: "Meeting alert: {{.Title}} in {{.Lead}} minutes"
 # - {{.Lead}}     - Lead time in minutes
 # - {{.Severity}} - Alert severity (normal/critical)
 
-# Final Notification TTS Template (optional)
-# When a message has "is_final_notification": true, use this TTS template
-# If not set: uses regular tts_template
-# If set to empty string "": disables TTS for final notifications
-# If set to a template: uses that template for final notifications
-# final_notification_tts_template: "FINAL WARNING: {{.Title}} starts in {{.Lead}} minutes!"
-# final_notification_tts_template: ""  # Disable TTS for final notifications
+# Notification Modes (optional)
+# Override sounds and/or TTS template per notification mode.
+# The "mode" field in the JSON message selects which mode to use.
+# If the mode is not configured here, falls back to the top-level sounds/tts_template.
+# "is_final_notification": true implicitly uses mode "final" if no explicit "mode" is set.
+# notification_modes:
+#   reduced:
+#     sounds:
+#       - "/usr/local/share/meeting-siren/gentle-chime.wav"
+#     tts_template: "Reminder: {{.Title}} in {{.Lead}} minutes"
+#   final:
+#     sounds:
+#       - "/usr/local/share/meeting-siren/final-alarm.wav"
+#     tts_template: "FINAL WARNING: {{.Title}} starts in {{.Lead}} minutes!"
+#   silent:
+#     sounds: []           # No sounds
+#     tts_template: ""     # Empty string disables TTS for this mode
 
 # Schedule Restrictions
 work_hours: "08:00-19:00"         # Only fire during these hours (24h format)

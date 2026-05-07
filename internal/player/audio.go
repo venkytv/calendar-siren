@@ -59,7 +59,7 @@ func (p *Player) Play(ctx context.Context, soundFiles []string) error {
 			if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
 				p.logger.Debug("Cannot set alarm volume, continuing without volume control", map[string]interface{}{
 					"alarm_volume": p.config.VolumePct,
-					"error": err.Error(),
+					"error":        err.Error(),
 				})
 				originalVolume = -1 // Mark as unavailable since setting failed
 			}
@@ -435,7 +435,7 @@ func (p *Player) PlayTTS(ctx context.Context, message string) error {
 			if err := p.setVolumeInternal(ctx, p.config.VolumePct); err != nil {
 				p.logger.Debug("Cannot set TTS volume, continuing without volume control", map[string]interface{}{
 					"tts_volume": p.config.VolumePct,
-					"error": err.Error(),
+					"error":      err.Error(),
 				})
 				originalVolume = -1 // Mark as unavailable since setting failed
 			}

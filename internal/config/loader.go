@@ -61,9 +61,6 @@ func (l *Loader) loadFromEnv(config *domain.Config) error {
 	if sounds := os.Getenv("SOUNDS"); sounds != "" {
 		config.Sounds = strings.Split(sounds, ",")
 	}
-	if finalSounds := os.Getenv("FINAL_NOTIFICATION_SOUNDS"); finalSounds != "" {
-		config.FinalNotificationSounds = strings.Split(finalSounds, ",")
-	}
 	if audioDriver := os.Getenv("AUDIO_OUTPUT_DRIVER"); audioDriver != "" {
 		config.AudioOutputDriver = audioDriver
 	}
@@ -91,9 +88,6 @@ func (l *Loader) loadFromEnv(config *domain.Config) error {
 	}
 	if template := os.Getenv("TTS_TEMPLATE"); template != "" {
 		config.TTSTemplate = template
-	}
-	if finalTemplate, exists := os.LookupEnv("FINAL_NOTIFICATION_TTS_TEMPLATE"); exists {
-		config.FinalNotificationTTSTemplate = &finalTemplate
 	}
 	if hours := os.Getenv("WORK_HOURS"); hours != "" {
 		config.WorkHours = hours

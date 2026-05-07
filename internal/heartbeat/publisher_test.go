@@ -11,10 +11,10 @@ import (
 )
 
 type mockLogger struct {
-	mu      sync.RWMutex
-	infos   []string
-	errors  []string
-	debugs  []string
+	mu     sync.RWMutex
+	infos  []string
+	errors []string
+	debugs []string
 }
 
 func (m *mockLogger) Info(msg string, fields map[string]interface{}) {

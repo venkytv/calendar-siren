@@ -289,3 +289,128 @@ func TestDaemon_StartStop(t *testing.T) {
 		}
 	})
 }
+
+func TestDaemon_SelectSounds(t *testing.T) {
+	t.Parallel()
+
+	reducedTTS := "Gentle reminder: {{.Title}}"
+	emptyTTS := ""
+
+	cfg := &domain.Config{
+		Sounds:      []string{"/default/alarm.wav"},
+		TTSTemplate: "Default: {{.Title}} in {{.Lead}} minutes",
+		NotificationModes: map[string]domain.NotificationMode{
+			"reduced": {
+				Sounds:      []string{"/reduced/chime.wav"},
+				TTSTemplate: &reducedTTS,
+			},
+			"final": {
+				Sounds:      []string{"/final/alarm.wav"},
+				TTSTemplate: nil, // inherit default
+			},
+			"silent": {
+				Sounds:      []string{},
+				TTSTemplate: &emptyTTS,
+			},
+		},
+	}
+
+	logger := mocks.NewMockLogger()
+	d := NewDaemon(cfg, logger, nil, nil, nil, nil, nil)
+
+	tests := []struct {
+		name         string
+		alert        *domain.MeetingAlert
+		wantSounds   []string
+		wantTemplate string
+		wantSkipTTS  bool
+	}{
+		{
+			name:         "no mode uses defaults",
+			alert:        &domain.MeetingAlert{Title: "A"},
+			wantSounds:   []string{"/default/alarm.wav"},
+			wantTemplate: "Default: {{.Title}} in {{.Lead}} minutes",
+		},
+		{
+			name:         "explicit mode selects mode sounds",
+			alert:        &domain.MeetingAlert{Title: "A", Mode: "reduced"},
+			wantSounds:   []string{"/reduced/chime.wav"},
+			wantTemplate: "Gentle reminder: {{.Title}}",
+		},
+		{
+			name:         "is_final_notification maps to final mode",
+			alert:        &domain.MeetingAlert{Title: "A", IsFinalNotification: true},
+			wantSounds:   []string{"/final/alarm.wav"},
+			wantTemplate: "Default: {{.Title}} in {{.Lead}} minutes",
+		},
+		{
+			name:         "explicit mode overrides is_final_notification",
+			alert:        &domain.MeetingAlert{Title: "A", Mode: "reduced", IsFinalNotification: true},
+			wantSounds:   []string{"/reduced/chime.wav"},
+			wantTemplate: "Gentle reminder: {{.Title}}",
+		},
+		{
+			name:         "unknown mode falls back to defaults",
+			alert:        &domain.MeetingAlert{Title: "A", Mode: "nonexistent"},
+			wantSounds:   []string{"/default/alarm.wav"},
+			wantTemplate: "Default: {{.Title}} in {{.Lead}} minutes",
+		},
+		{
+			name:        "silent mode skips TTS",
+			alert:       &domain.MeetingAlert{Title: "A", Mode: "silent"},
+			wantSounds:  []string{},
+			wantSkipTTS: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotSounds := d.selectSounds(tt.alert)
+			if len(gotSounds) != len(tt.wantSounds) {
+				t.Errorf("selectSounds() = %v, want %v", gotSounds, tt.wantSounds)
+			} else {
+				for i := range gotSounds {
+					if gotSounds[i] != tt.wantSounds[i] {
+						t.Errorf("selectSounds()[%d] = %q, want %q", i, gotSounds[i], tt.wantSounds[i])
+					}
+				}
+			}
+
+			gotTemplate, gotSkip := d.selectTTSTemplate(tt.alert)
+			if gotSkip != tt.wantSkipTTS {
+				t.Errorf("selectTTSTemplate() skip = %v, want %v", gotSkip, tt.wantSkipTTS)
+			}
+			if !tt.wantSkipTTS && gotTemplate != tt.wantTemplate {
+				t.Errorf("selectTTSTemplate() = %q, want %q", gotTemplate, tt.wantTemplate)
+			}
+		})
+	}
+}
+
+func TestDaemon_SelectSounds_NoModesConfigured(t *testing.T) {
+	t.Parallel()
+
+	cfg := &domain.Config{
+		Sounds:      []string{"/default/alarm.wav"},
+		TTSTemplate: "Default template",
+	}
+
+	logger := mocks.NewMockLogger()
+	d := NewDaemon(cfg, logger, nil, nil, nil, nil, nil)
+
+	alert := &domain.MeetingAlert{Title: "A", Mode: "reduced"}
+	gotSounds := d.selectSounds(alert)
+	if len(gotSounds) != 1 || gotSounds[0] != "/default/alarm.wav" {
+		t.Errorf("expected default sounds when no modes configured, got %v", gotSounds)
+	}
+
+	gotTemplate, gotSkip := d.selectTTSTemplate(alert)
+	if gotSkip {
+		t.Error("expected TTS not to be skipped when no modes configured")
+	}
+	if gotTemplate != "Default template" {
+		t.Errorf("expected default template, got %q", gotTemplate)
+	}
+}

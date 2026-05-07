@@ -287,30 +287,44 @@ func (d *Daemon) handleRepeats(ctx context.Context, event *domain.AlarmEvent) {
 	}
 }
 
-// selectSounds returns the appropriate sound files based on whether this is a final notification
-func (d *Daemon) selectSounds(alert *domain.MeetingAlert) []string {
-	// If this is a final notification and final notification sounds are configured, use those
-	if alert.IsFinalNotification && len(d.config.FinalNotificationSounds) > 0 {
-		return d.config.FinalNotificationSounds
+// resolveMode returns the notification mode config for the alert, if one exists
+func (d *Daemon) resolveMode(alert *domain.MeetingAlert) *domain.NotificationMode {
+	mode := alert.ResolvedMode()
+	if mode == "" {
+		return nil
 	}
-	// Otherwise, use the regular sounds
+	if d.config.NotificationModes == nil {
+		return nil
+	}
+	m, ok := d.config.NotificationModes[mode]
+	if !ok {
+		d.logger.Info("Unknown notification mode, falling back to defaults", map[string]interface{}{
+			"mode": mode,
+		})
+		return nil
+	}
+	return &m
+}
+
+// selectSounds returns the appropriate sound files based on the notification mode.
+// A mode with an explicit empty sounds list means "no sounds" (not "use defaults").
+func (d *Daemon) selectSounds(alert *domain.MeetingAlert) []string {
+	if m := d.resolveMode(alert); m != nil && m.Sounds != nil {
+		return m.Sounds
+	}
 	return d.config.Sounds
 }
 
-// selectTTSTemplate returns the appropriate TTS template based on whether this is a final notification
-// Returns the template string and a boolean indicating whether TTS should be skipped
+// selectTTSTemplate returns the appropriate TTS template based on the notification mode.
+// Returns the template string and a boolean indicating whether TTS should be skipped.
 func (d *Daemon) selectTTSTemplate(alert *domain.MeetingAlert) (string, bool) {
-	// If this is a final notification and final notification TTS template is configured
-	if alert.IsFinalNotification && d.config.FinalNotificationTTSTemplate != nil {
-		template := *d.config.FinalNotificationTTSTemplate
-		// If explicitly set to empty string, skip TTS
-		if template == "" {
-			return "", true // skip TTS
+	if m := d.resolveMode(alert); m != nil && m.TTSTemplate != nil {
+		tmpl := *m.TTSTemplate
+		if tmpl == "" {
+			return "", true
 		}
-		// Use the configured final notification template
-		return template, false
+		return tmpl, false
 	}
-	// Otherwise, use the regular template
 	return d.config.TTSTemplate, false
 }
 

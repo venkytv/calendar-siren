@@ -91,6 +91,13 @@ func (m *MockAudioPlayer) RenderTTSMessage(alert *domain.MeetingAlert) (string, 
 	return "Test TTS message for " + alert.Title, nil
 }
 
+func (m *MockAudioPlayer) RenderTTSMessageWithTemplate(alert *domain.MeetingAlert, template string) (string, error) {
+	if m.ShouldFail {
+		return "", m.FailureError
+	}
+	return "Test TTS [" + template + "] for " + alert.Title, nil
+}
+
 func (m *MockAudioPlayer) GPIOBuzzer(ctx context.Context) error {
 	if m.ShouldFail {
 		return m.FailureError
